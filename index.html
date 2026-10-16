@@ -3,111 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cámara de Seguridad Web</title>
-    <!-- Cargamos la librería PeerJS para la conexión remota -->
+    <title>Cámara de Seguridad Ultra-Compatible</title>
     <script src="https://unpkg.com"></script>
     <style>
-        body { font-family: Arial, sans-serif; background: #121212; color: white; text-align: center; margin: 0; padding: 200px 20px 20px; }
+        body { font-family: Arial, sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
         h1 { color: #00adb5; }
         video { width: 100%; max-width: 500px; border: 3px solid #00adb5; background: black; border-radius: 8px; margin-top: 10px; }
         .btn { background: #00adb5; color: white; border: none; padding: 15px 30px; font-size: 16px; border-radius: 5px; cursor: pointer; margin: 10px; width: 80%; max-width: 300px; }
         .info { background: #222831; padding: 15px; border-radius: 5px; margin: 20px auto; max-width: 400px; word-wrap: break-word; }
-        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
     <h1>Monitoreo Residencial</h1>
 
-    <!-- PANTALLA INICIAL: SELECCIÓN DE ROL -->
-    <div id="setup-room">
-        <p>¿Qué función cumplirá este dispositivo?</p>
-        <button class="btn" onclick="iniciarComoCamara()">Configurar como CÁMARA (Tablet)</button>
-        <button class="btn" onclick="mostrarPantallaMonitor()">Configurar como MONITOR (Samsung)</button>
-    </div>
-
-    <!-- MODO CÁMARA (TABLET) -->
-    <div id="modo-camara" class="hidden">
-        <h2>Transmitiendo...</h2>
+    <!-- SECCIÓN ÚNICA PARA LA TABLET -->
+    <div id="pantalla-tablet">
+        <p>Paso 1: Presiona el botón para activar la cámara en esta tablet vieja.</p>
+        <button class="btn" onclick="iniciarCamaraFija()">ENCENDER CÁMARA</button>
         <div class="info">
-            <p><strong>ID DE TU CÁMARA:</strong></p>
-            <h3 id="camera-id" style="color: #ff2e63;">Generando código...</h3>
-            <p><small>Escribe este código exacto en tu celular Samsung.</small></p>
+            <p><strong>ESTADO:</strong> <span id="estado-conexion" style="color: #ff2e63;">Apagada</span></p>
         </div>
         <video id="local-video" autoplay playsinline muted></video>
     </div>
 
-    <!-- MODO MONITOR (SAMSUNG) -->
-    <div id="modo-monitor" class="hidden">
-        <h2>Panel de Monitoreo</h2>
-        <div class="info">
-            <p>Introduce el ID que muestra la tablet:</p>
-            <input type="text" id="target-id" placeholder="Ej: camara-1234" style="padding: 10px; width: 80%; font-size: 16px; border-radius: 5px; border: none; text-align: center;">
-            <br><br>
-            <button class="btn" onclick="conectarACamara()">Ver Cámara en Vivo</button>
-        </div>
-        <video id="remote-video" autoplay playsinline></video>
-    </div>
-
     <script>
-        let peer;
         let localStream;
+        // Forzamos un ID fijo y ultra simple que no requiera generación aleatoria
+        const ID_FIJO_CAMARA = "camara-huawei-casa"; 
+        
+        function iniciarCamaraFija() {
+            document.getElementById('estado-conexion').innerText = "Conectando al servidor...";
+            document.getElementById('estado-conexion').style.color = "#ffb400";
 
-        // --- MODO CÁMARA (TABLET HUAWEi) ---
-        function iniciarComoCamara() {
-            document.getElementById('setup-room').classList.add('hidden');
-            document.getElementById('modo-camara').classList.remove('hidden');
-
-            // Conectamos al servidor gratuito de PeerJS
-            peer = new Peer();
+            // Forzamos la conexión con parámetros básicos tolerantes a redes viejas
+            const peer = new Peer(ID_FIJO_CAMARA, {
+                debug: 2
+            });
 
             peer.on('open', (id) => {
-                // Mostramos el ID generado automáticamente para que lo uses en el Samsung
-                document.getElementById('camera-id').innerText = id;
+                document.getElementById('estado-conexion').innerText = "CÁMARA LISTA Y EMITIENDO";
+                document.getElementById('estado-conexion').style.color = "#00ff66";
             });
 
-            // Compatibilidad para navegadores antiguos de Android 4.3
-            navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+            peer.on('error', (err) => {
+                // Si el ID fijo ya está en uso por error, lo limpia y reintenta
+                if(err.type === 'unavailable-id') {
+                    document.getElementById('estado-conexion').innerText = "El ID ya está activo, lista para recibir conexión.";
+                    document.getElementById('estado-conexion').style.color = "#00ff66";
+                } else {
+                    alert("Error de conexión: " + err.type);
+                }
+            });
 
-            if (navigator.getUserMedia) {
-                navigator.getUserMedia({ video: { facingMode: "environment" }, audio: true }, (stream) => {
-                    localStream = stream;
-                    const videoElement = document.getElementById('local-video');
-                    if ('srcObject' in videoElement) {
-                        videoElement.srcObject = stream;
-                    } else {
-                        videoElement.src = window.URL.createObjectURL(stream); // Para navegadores muy viejos
-                    }
-                }, (err) => {
-                    alert("Error al acceder a la cámara: " + err);
+            // Soporte universal de cámara para Android Antiguo
+            const opcionesCamara = { 
+                video: true, 
+                audio: false // Desactivamos audio para reducir consumo de datos y evitar bloqueos de permisos viciados
+            };
+
+            navigator.mediaDevices = navigator.mediaDevices || {};
+            navigator.mediaDevices.getUserMedia = navigator.mediaDevices.getUserMedia || function(constraints) {
+                let getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+                if (!getUserMedia) {
+                    return Promise.reject(new Error('getUserMedia no está soportado en este navegador viejo'));
+                }
+                return new Promise(function(resolve, reject) {
+                    getUserMedia.call(navigator, constraints, resolve, reject);
                 });
-            } else {
-                alert("Tu navegador no soporta acceso a la cámara. Prueba instalando una versión antigua de Firefox o Chrome.");
             }
 
-            // Responder cuando el celular Samsung llame pidiendo el video
-            peer.on('call', (call) => {
-                call.answer(localStream); // Enviamos el video de la cámara
+            navigator.mediaDevices.getUserMedia(opcionesCamara)
+            .then((stream) => {
+                localStream = stream;
+                const videoElement = document.getElementById('local-video');
+                if ('srcObject' in videoElement) {
+                    videoElement.srcObject = stream;
+                } else {
+                    videoElement.src = window.URL.createObjectURL(stream);
+                }
+            })
+            .catch((err) => {
+                alert("No se pudo abrir el lente de la cámara: " + err.message);
             });
-        }
 
-        // --- MODO MONITOR (SAMSUNG GALAXY A15) ---
-        function mostrarPantallaMonitor() {
-            document.getElementById('setup-room').classList.add('hidden');
-            document.getElementById('modo-monitor').classList.remove('hidden');
-            peer = new Peer();
-        }
-
-        function conectarACamara() {
-            const targetId = document.getElementById('target-id').value.trim();
-            if (!targetId) return alert("Por favor, ingresa el ID de la tablet");
-
-            // Llamamos a la tablet enviando un flujo vacío (el Samsung solo quiere recibir)
-            const call = peer.call(targetId, new MediaStream());
-            
-            call.on('stream', (remoteStream) => {
-                const remoteVideo = document.getElementById('remote-video');
-                remoteVideo.srcObject = remoteStream;
+            // Responder cuando el celular Samsung llame
+            peer.on('call', (call) => {
+                call.answer(localStream);
             });
         }
     </script>
